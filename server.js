@@ -20,7 +20,7 @@ const PORT = process.env.PORT || 5000
 // Middleware de seguridad mejorado
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: process.env.FRONTEND_URL || "https://www.miniservice24.site",
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
