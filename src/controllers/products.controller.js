@@ -3,12 +3,9 @@ import { executeQuery, executeTransaction } from "../config/database.js"
 // NUEVO: Obtener los 10 productos más vendidos para la interfaz de ventas
 export const getTopSellingProducts = async (req, res) => {
   try {
-    const { limit = 10 } = req.query
+    const limit = parseInt(req.query.limit, 10) || 10
 
-    // Validar límite
-    const limitNum = Math.min(50, Math.max(5, Number.parseInt(limit) || 10))
-
-    const sql = `
+    const query = `
       SELECT 
         p.id,
         p.name,
@@ -38,25 +35,22 @@ export const getTopSellingProducts = async (req, res) => {
                p.min_stock, p.unit_type, p.category_id, p.barcode, p.image, 
                p.active, p.created_at, p.updated_at, c.name, c.color, c.icon
       ORDER BY total_sold DESC, sales_count DESC, p.name ASC
-      LIMIT ?
+      LIMIT ${limit}
     `
 
-    const topProducts = await executeQuery(sql, [limitNum])
+    const rows = await executeQuery(query)
 
-    res.json({
+    return res.json({
       success: true,
       data: {
-        products: topProducts,
-        count: topProducts.length,
-        limit: limitNum,
-      },
+        products: rows
+      }
     })
   } catch (error) {
     console.error("Error al obtener productos más vendidos:", error)
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Error interno del servidor",
-      code: "TOP_PRODUCTS_FETCH_ERROR",
+      message: "Error al obtener productos más vendidos",
     })
   }
 }
