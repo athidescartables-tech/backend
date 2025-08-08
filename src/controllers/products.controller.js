@@ -34,9 +34,7 @@ export const getTopSellingProducts = async (req, res) => {
       LEFT JOIN sale_items si ON p.id = si.product_id
       LEFT JOIN sales s ON si.sale_id = s.id AND s.status = 'completed'
       WHERE p.active = TRUE
-      GROUP BY p.id, p.name, p.description, p.price, p.cost, p.stock, 
-               p.min_stock, p.unit_type, p.category_id, p.barcode, p.image, 
-               p.active, p.created_at, p.updated_at, c.name, c.color, c.icon
+      GROUP BY p.id, p.name, p.description, p.price, p.cost, p.stock, p.min_stock, p.unit_type, p.category_id, p.barcode, p.image, p.active, p.created_at, p.updated_at, c.name, c.color, c.icon
       ORDER BY total_sold DESC, sales_count DESC, p.name ASC
       LIMIT ?
     `
@@ -159,6 +157,7 @@ export const getProducts = async (req, res) => {
       params.push(Number.parseFloat(maxPrice))
     }
 
+    sql += ` GROUP BY p.id, p.name, p.description, p.price, p.cost, p.stock, p.min_stock, p.unit_type, p.category_id, p.barcode, p.image, p.active, p.created_at, p.updated_at, c.name, c.color, c.icon`
     // Ordenamiento optimizado
     sql += ` ORDER BY p.name ASC, p.id ASC`
 

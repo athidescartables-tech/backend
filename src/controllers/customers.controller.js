@@ -110,7 +110,7 @@ if (search && search.trim()) {
   params.push(searchTerm, searchTerm, searchTerm, searchTerm)
 }
 
-sql += ` GROUP BY c.id`
+sql += ` GROUP BY c.id, c.name, c.email, c.phone, c.document_type, c.document_number, c.address, c.city, c.credit_limit, c.notes, c.active, c.created_at, c.updated_at`
 
 // NUEVO: Filtro solo deudores (después del GROUP BY)
 if (debtors_only === "true") {
