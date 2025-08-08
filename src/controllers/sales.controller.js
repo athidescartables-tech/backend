@@ -226,7 +226,7 @@ export const getSales = async (req, res) => {
     // Ejecutar consultas en paralelo para mejor performance
     const [countResult, sales] = await Promise.all([
       executeQuery(countSql, countParams),
-      executeQuery(sql + ` LIMIT ? OFFSET ?`, [...params, limitNum, offset]),
+      executeQuery(`${sql} LIMIT ${limitNum} OFFSET ${offset}`, params)
     ])
 
     // Formatear métodos de pago para cada venta
