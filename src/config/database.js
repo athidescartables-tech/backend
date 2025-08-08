@@ -1,4 +1,3 @@
-// db.js
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 
@@ -80,24 +79,28 @@ export const testConnection = async () => {
     return true;
   } catch (error) {
     console.error("❌ Error conectando a MySQL:", error.message);
-    return false;
+    console.error("💡 Verifique la configuración de la base de datos en las variables de entorno");
+    // En producción, es crucial que la app no continúe si no hay conexión a la DB
+    process.exit(1); 
   }
 };
+
+// Función para ejecutar una consulta SQL
 
 // Función para ejecutar queries
 export const executeQuery = async (query, params = []) => {
   try {
-    const [results] = await pool.execute(query, params);
-    return results;
+    const [results] = await pool.execute(query, params)
+    return results
   } catch (error) {
-    console.error("Error ejecutando query:", error);
-    console.error("Query:", query);
-    console.error("Params:", params);
-    throw error;
+    console.error("Error ejecutando query:", error)
+    console.error("Query:", query)
+    console.error("Params:", params)
+    throw error
   }
-};
+}
 
-// Función para transacciones
+// Función para ejecutar una transacción SQL
 export const executeTransaction = async (queries) => {
   const connection = await pool.getConnection();
 

@@ -105,7 +105,7 @@ export const getProducts = async (req, res) => {
     // Filtro por estado activo/inactivo
     if (active !== "all") {
       sql += ` AND p.active = ?`
-      params.push(active === "true" ? 1 : 0) // Asegura que el booleano se envíe como 0 o 1
+      params.push(active === "true")
     }
 
     // Filtro por categoría (optimizado con índice)
@@ -173,7 +173,7 @@ export const getProducts = async (req, res) => {
 
     if (active !== "all") {
       countSql += ` AND p.active = ?`
-      countParams.push(active === "true" ? 1 : 0)
+      countParams.push(active === "true")
     }
     if (category && !isNaN(Number.parseInt(category))) {
       countSql += ` AND p.category_id = ?`
