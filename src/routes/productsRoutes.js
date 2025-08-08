@@ -34,3 +34,4 @@ router.get("/movements/list", getStockMovements)
 router.post("/movements", validateStockMovement, createStockMovement)
 
 export default router
+
