@@ -3,7 +3,7 @@ import { executeQuery, executeTransaction } from "../config/database.js"
 // NUEVO: Obtener los 10 productos más vendidos para la interfaz de ventas
 export const getTopSellingProducts = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit, 10) || 10
+    const limit = Number.parseInt(req.query.limit, 10) || 10
 
     const query = `
       SELECT 
@@ -43,8 +43,8 @@ export const getTopSellingProducts = async (req, res) => {
     return res.json({
       success: true,
       data: {
-        products: rows
-      }
+        products: rows,
+      },
     })
   } catch (error) {
     console.error("Error al obtener productos más vendidos:", error)
@@ -332,7 +332,7 @@ export const getStockMovements = async (req, res) => {
     // Ejecutar consultas en paralelo
     const [countResult, movements] = await Promise.all([
       executeQuery(countSql, countParams),
-      executeQuery(`${sql} LIMIT ${limitNum} OFFSET ${offset}`, params)
+      executeQuery(`${sql} LIMIT ${limitNum} OFFSET ${offset}`, params),
     ])
 
     const total = Number.parseInt(countResult[0].total)
@@ -454,24 +454,23 @@ export const createProduct = async (req, res) => {
       }
     }
 
-    let productMinStock = productUnitType === "kg" ? 1.0 : 10
-    if (min_stock !== undefined && min_stock !== null && min_stock !== "") {
-      productMinStock = Number.parseFloat(min_stock)
-      if (isNaN(productMinStock) || productMinStock < 0) {
-        return res.status(400).json({
-          success: false,
-          message: "El stock mínimo no puede ser negativo",
-          code: "INVALID_MIN_STOCK",
-        })
-      }
+    const minStock =
+      min_stock !== undefined && min_stock !== null && min_stock !== "" ? Number.parseFloat(min_stock) : 10 // Valor por defecto
 
-      if (productUnitType === "unidades" && !Number.isInteger(productMinStock)) {
-        return res.status(400).json({
-          success: false,
-          message: "Para productos por unidades, el stock mínimo debe ser un número entero",
-          code: "INVALID_UNIT_MIN_STOCK",
-        })
-      }
+    if (isNaN(minStock) || minStock < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "El stock mínimo debe ser un número válido y no puede ser negativo",
+        code: "INVALID_MIN_STOCK",
+      })
+    }
+
+    if (productUnitType === "unidades" && !Number.isInteger(minStock)) {
+      return res.status(400).json({
+        success: false,
+        message: "Para productos por unidades, el stock mínimo debe ser un número entero",
+        code: "INVALID_MIN_UNIT_STOCK",
+      })
     }
 
     const productCategoryId = category_id && !isNaN(Number.parseInt(category_id)) ? Number.parseInt(category_id) : null
@@ -510,23 +509,28 @@ export const createProduct = async (req, res) => {
       }
     }
 
-    const sql = `
-      INSERT INTO products (name, description, price, cost, stock, min_stock, category_id, barcode, image, unit_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    const insertSql = `
+      INSERT INTO products (
+        name, description, price, cost, stock, min_stock, category_id, 
+        barcode, image, unit_type, active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `
 
-    const result = await executeQuery(sql, [
+    const insertParams = [
       name.trim(),
       description?.trim() || null,
       productPrice,
       productCost,
       productStock,
-      productMinStock,
+      minStock, // Usar la variable validada
       productCategoryId,
       barcode?.trim() || null,
       image?.trim() || null,
       productUnitType,
-    ])
+      true,
+    ]
+
+    const result = await executeQuery(insertSql, insertParams)
 
     // Si hay stock inicial, crear movimiento
     if (productStock > 0) {
@@ -539,16 +543,14 @@ export const createProduct = async (req, res) => {
 
     // Obtener el producto creado
     const newProduct = await executeQuery(
-      `
-      SELECT 
+      `SELECT 
         p.*,
         c.name as category_name,
         c.color as category_color,
         c.icon as category_icon
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.id = ?
-    `,
+      WHERE p.id = ?`,
       [result.insertId],
     )
 
@@ -612,23 +614,28 @@ export const updateProduct = async (req, res) => {
     const productPrice = Number.parseFloat(price)
     const productCost = Number.parseFloat(cost) || 0
 
-    let productMinStock = productUnitType === "kg" ? 1.0 : 10
-    if (min_stock !== undefined && min_stock !== null && min_stock !== "") {
-      productMinStock = Number.parseFloat(min_stock)
-      if (isNaN(productMinStock) || productMinStock < 0) {
-        return res.status(400).json({
-          success: false,
-          message: "El stock mínimo no puede ser negativo",
-          code: "INVALID_MIN_STOCK",
-        })
-      }
+    let minStock = existingProduct[0].min_stock // Mantener el valor existente por defecto
 
-      if (productUnitType === "unidades" && !Number.isInteger(productMinStock)) {
-        return res.status(400).json({
-          success: false,
-          message: "Para productos por unidades, el stock mínimo debe ser un número entero",
-          code: "INVALID_UNIT_MIN_STOCK",
-        })
+    if (min_stock !== undefined) {
+      if (min_stock === null || min_stock === "") {
+        minStock = 10 // Valor por defecto si se envía vacío
+      } else {
+        minStock = Number.parseFloat(min_stock)
+        if (isNaN(minStock) || minStock < 0) {
+          return res.status(400).json({
+            success: false,
+            message: "El stock mínimo debe ser un número válido y no puede ser negativo",
+            code: "INVALID_MIN_STOCK",
+          })
+        }
+
+        if (productUnitType === "unidades" && !Number.isInteger(minStock)) {
+          return res.status(400).json({
+            success: false,
+            message: "Para productos por unidades, el stock mínimo debe ser un número entero",
+            code: "INVALID_MIN_UNIT_STOCK",
+          })
+        }
       }
     }
 
@@ -670,38 +677,38 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    const sql = `
+    const updateSql = `
       UPDATE products 
       SET name = ?, description = ?, price = ?, cost = ?, min_stock = ?, 
-          category_id = ?, barcode = ?, image = ?, active = ?, unit_type = ?, updated_at = CURRENT_TIMESTAMP
+          category_id = ?, barcode = ?, image = ?, unit_type = ?, active = ?, updated_at = NOW()
       WHERE id = ?
     `
 
-    await executeQuery(sql, [
+    const updateParams = [
       name.trim(),
       description?.trim() || null,
       productPrice,
       productCost,
-      productMinStock,
+      minStock, // Usar la variable validada
       productCategoryId,
       barcode?.trim() || null,
       image?.trim() || null,
-      productActive,
       productUnitType,
+      productActive,
       Number.parseInt(id),
-    ])
+    ]
+
+    await executeQuery(updateSql, updateParams)
 
     const updatedProduct = await executeQuery(
-      `
-      SELECT 
+      `SELECT 
         p.*,
         c.name as category_name,
         c.color as category_color,
         c.icon as category_icon
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.id = ?
-    `,
+      WHERE p.id = ?`,
       [Number.parseInt(id)],
     )
 
@@ -719,7 +726,6 @@ export const updateProduct = async (req, res) => {
     })
   }
 }
-
 
 export const deleteProduct = async (req, res) => {
   try {
@@ -780,7 +786,6 @@ export const deleteProduct = async (req, res) => {
     })
   }
 }
-
 
 export const createStockMovement = async (req, res) => {
   try {
@@ -909,8 +914,7 @@ export const createStockMovement = async (req, res) => {
     const movementId = results[0].insertId
 
     const newMovement = await executeQuery(
-      `
-      SELECT 
+      `SELECT 
         sm.*,
         p.name as product_name,
         p.image as product_image,
@@ -919,8 +923,7 @@ export const createStockMovement = async (req, res) => {
       FROM stock_movements sm
       LEFT JOIN products p ON sm.product_id = p.id
       LEFT JOIN users u ON sm.user_id = u.id
-      WHERE sm.id = ?
-    `,
+      WHERE sm.id = ?`,
       [movementId],
     )
 
@@ -946,23 +949,25 @@ export const getStockAlerts = async (req, res) => {
         p.id,
         p.name,
         p.stock,
-        p.min_stock,
+        COALESCE(p.min_stock, 10) as min_stock,
         p.unit_type,
         c.name as category_name,
         CASE 
           WHEN p.stock = 0 THEN 'critical'
-          WHEN p.stock <= p.min_stock THEN 'critical'
-          WHEN p.stock <= (p.min_stock * 1.5) THEN 'warning'
+          WHEN p.stock <= COALESCE(p.min_stock, 10) THEN 'warning'
+          WHEN p.stock <= (COALESCE(p.min_stock, 10) * 1.5) THEN 'low'
           ELSE 'normal'
         END as level
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.active = TRUE AND p.stock <= p.min_stock
+      WHERE p.active = TRUE 
+        AND p.stock <= COALESCE(p.min_stock, 10)
+        AND COALESCE(p.min_stock, 10) > 0
       ORDER BY 
         CASE 
           WHEN p.stock = 0 THEN 1
-          WHEN p.stock <= p.min_stock THEN 2
-          WHEN p.stock <= (p.min_stock * 1.5) THEN 3
+          WHEN p.stock <= COALESCE(p.min_stock, 10) THEN 2
+          WHEN p.stock <= (COALESCE(p.min_stock, 10) * 1.5) THEN 3
           ELSE 4
         END,
         p.stock ASC, 
@@ -987,56 +992,52 @@ export const getStockAlerts = async (req, res) => {
 
 export const getStockStats = async (req, res) => {
   try {
-    const generalStats = await executeQuery(`
-      SELECT 
-        COUNT(*) as total_products,
-        SUM(CASE WHEN active = TRUE THEN 1 ELSE 0 END) as active_products,
-        SUM(CASE WHEN active = TRUE AND stock <= min_stock THEN 1 ELSE 0 END) as low_stock,
-        SUM(CASE WHEN active = TRUE AND stock = 0 THEN 1 ELSE 0 END) as out_of_stock,
-        SUM(CASE WHEN active = TRUE AND unit_type = 'unidades' THEN 1 ELSE 0 END) as unit_products,
-        SUM(CASE WHEN active = TRUE AND unit_type = 'kg' THEN 1 ELSE 0 END) as kg_products,
-        COALESCE(SUM(CASE WHEN active = TRUE THEN stock * price ELSE 0 END), 0) as total_inventory_value
-      FROM products
-    `)
+    const generalStats = await executeQuery(`SELECT 
+      COUNT(*) as total_products,
+      SUM(CASE WHEN active = TRUE THEN 1 ELSE 0 END) as active_products,
+      SUM(CASE WHEN active = TRUE AND stock <= min_stock THEN 1 ELSE 0 END) as low_stock,
+      SUM(CASE WHEN active = TRUE AND stock = 0 THEN 1 ELSE 0 END) as out_of_stock,
+      SUM(CASE WHEN active = TRUE AND unit_type = 'unidades' THEN 1 ELSE 0 END) as unit_products,
+      SUM(CASE WHEN active = TRUE AND unit_type = 'kg' THEN 1 ELSE 0 END) as kg_products,
+      COALESCE(SUM(CASE WHEN active = TRUE THEN stock * price ELSE 0 END), 0) as total_inventory_value
+    FROM products`)
 
-    const monthlyMovements = await executeQuery(`
-      SELECT 
-        type,
-        COUNT(*) as count,
-        SUM(ABS(quantity)) as total_quantity
-      FROM stock_movements 
-      WHERE MONTH(created_at) = MONTH(CURRENT_DATE()) 
-        AND YEAR(created_at) = YEAR(CURRENT_DATE())
-      GROUP BY type
-    `)
+    const monthlyMovements = await executeQuery(`SELECT 
+      type,
+      COUNT(*) as count,
+      SUM(ABS(quantity)) as total_quantity
+    FROM stock_movements 
+    WHERE MONTH(created_at) = MONTH(CURRENT_DATE()) 
+      AND YEAR(created_at) = YEAR(CURRENT_DATE())
+    GROUP BY type`)
 
-    const lowStockProducts = await executeQuery(`
-      SELECT 
-        p.id,
-        p.name,
-        p.stock,
-        p.min_stock,
-        p.unit_type,
-        c.name as category_name,
-        CASE 
-          WHEN p.stock = 0 THEN 'critical'
-          WHEN p.stock <= p.min_stock THEN 'critical'
-          WHEN p.stock <= (p.min_stock * 1.5) THEN 'warning'
-          ELSE 'normal'
-        END as level
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.active = TRUE AND p.stock <= p.min_stock
-      ORDER BY 
-        CASE 
-          WHEN p.stock = 0 THEN 1
-          WHEN p.stock <= p.min_stock THEN 2
-          WHEN p.stock <= (p.min_stock * 1.5) THEN 3
-          ELSE 4
-        END,
-        p.stock ASC
-      LIMIT 10
-    `)
+    const lowStockProducts = await executeQuery(`SELECT 
+      p.id,
+      p.name,
+      p.stock,
+      COALESCE(p.min_stock, 10) as min_stock,
+      p.unit_type,
+      c.name as category_name,
+      CASE 
+        WHEN p.stock = 0 THEN 'critical'
+        WHEN p.stock <= COALESCE(p.min_stock, 10) THEN 'warning'
+        WHEN p.stock <= (COALESCE(p.min_stock, 10) * 1.5) THEN 'low'
+        ELSE 'normal'
+      END as level
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE p.active = TRUE 
+      AND p.stock <= COALESCE(p.min_stock, 10)
+      AND COALESCE(p.min_stock, 10) > 0
+    ORDER BY 
+      CASE 
+        WHEN p.stock = 0 THEN 1
+        WHEN p.stock <= COALESCE(p.min_stock, 10) THEN 2
+        WHEN p.stock <= (COALESCE(p.min_stock, 10) * 1.5) THEN 3
+        ELSE 4
+      END,
+      p.stock ASC
+    LIMIT 10`)
 
     res.json({
       success: true,
