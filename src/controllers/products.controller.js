@@ -720,7 +720,6 @@ export const updateProduct = async (req, res) => {
   }
 }
 
-import { executeQuery } from "../utils/database" // Assuming executeQuery is imported from a database utility file
 
 export const deleteProduct = async (req, res) => {
   try {
