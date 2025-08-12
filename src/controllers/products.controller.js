@@ -720,6 +720,8 @@ export const updateProduct = async (req, res) => {
   }
 }
 
+import { executeQuery } from "../utils/database" // Assuming executeQuery is imported from a database utility file
+
 export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params
@@ -745,17 +747,31 @@ export const deleteProduct = async (req, res) => {
       Number.parseInt(id),
     ])
 
-    await executeQuery("UPDATE products SET active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [
-      Number.parseInt(id),
-    ])
+    if (salesCount[0].count > 0) {
+      // Producto con ventas: solo desactivar para mantener integridad referencial
+      await executeQuery("UPDATE products SET active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [
+        Number.parseInt(id),
+      ])
 
-    res.json({
-      success: true,
-      message:
-        salesCount[0].count > 0
-          ? "Producto desactivado correctamente (tiene ventas asociadas)"
-          : "Producto eliminado correctamente",
-    })
+      res.json({
+        success: true,
+        message: "Producto desactivado correctamente (tiene ventas asociadas)",
+        action: "deactivated",
+      })
+    } else {
+      // Producto sin ventas: eliminar completamente
+      // Primero eliminar movimientos de stock relacionados
+      await executeQuery("DELETE FROM stock_movements WHERE product_id = ?", [Number.parseInt(id)])
+
+      // Luego eliminar el producto
+      await executeQuery("DELETE FROM products WHERE id = ?", [Number.parseInt(id)])
+
+      res.json({
+        success: true,
+        message: "Producto eliminado completamente",
+        action: "deleted",
+      })
+    }
   } catch (error) {
     console.error("Error al eliminar producto:", error)
     res.status(500).json({
@@ -765,6 +781,7 @@ export const deleteProduct = async (req, res) => {
     })
   }
 }
+
 
 export const createStockMovement = async (req, res) => {
   try {
