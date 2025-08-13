@@ -188,10 +188,10 @@ export const getCurrentCashStatus = async (req, res) => {
         case "cancellation":
           // CORREGIDO: Para cancelaciones, restar correctamente según el método de pago
           console.log(`🔄 Procesando cancelación: ${amount} para método ${movement.payment_method}`)
-          
+
           // El amount de cancelación ya viene negativo desde la base de datos
           const cancelAmount = Math.abs(amount) // Convertir a positivo para restar
-          
+
           switch (movement.payment_method) {
             case "efectivo":
               salesCash -= cancelAmount
@@ -255,7 +255,7 @@ export const getCurrentCashStatus = async (req, res) => {
               physicalCashIncome -= cancelAmount
               break
           }
-          
+
           if (movement.sale_id) {
             totalSalesCount = Math.max(0, totalSalesCount - 1)
           }
@@ -337,7 +337,7 @@ export const getCurrentCashStatus = async (req, res) => {
 
         // NUEVO: Total general de todos los métodos de pago procesados
         total_general_amount: salesCash + salesCard + salesTransfer + pagosCuentaCorrienteEfectivo + pagosCuentaCorrienteTarjeta + pagosCuentaCorrienteTransferencia,
-        
+
         // NUEVO: Total de pagos de cuenta corriente (todos los métodos)
         total_pagos_cuenta_corriente: pagosCuentaCorrienteEfectivo + pagosCuentaCorrienteTarjeta + pagosCuentaCorrienteTransferencia,
       },
@@ -622,7 +622,7 @@ export const closeCash = async (req, res) => {
         case "cancellation":
           // CORREGIDO: Para cancelaciones en cierre, restar correctamente
           const cancelAmount = Math.abs(amount) // Convertir a positivo para restar
-          
+
           switch (row.payment_method) {
             case "efectivo":
               salesCash -= cancelAmount
@@ -884,11 +884,11 @@ export const getCashHistory = async (req, res) => {
       GROUP BY cs.id, cs.opening_amount, cs.closing_amount, cs.expected_amount, cs.difference, cs.status,
                cs.opening_date, cs.closing_date, cs.opened_by, cs.closed_by, cs.opening_notes, cs.closing_notes,
                cs.created_at, cs.updated_at, u_open.name, u_close.name
-      ORDER BY cs.closing_date DESC
-      LIMIT ? OFFSET ?
+       ORDER BY cs.closing_date DESC
+  LIMIT ${limitNum} OFFSET ${offset}
     `
 
-    const history = await executeQuery(historyQuery, [...params, limitNum, offset])
+   const history = await executeQuery(historyQuery, params)
 
     // Contar total para paginación
     const countQuery = `SELECT COUNT(*) as total FROM cash_sessions cs ${dateFilter}`
@@ -1060,8 +1060,7 @@ export const getCashMovements = async (req, res) => {
     const limitNum = Math.min(100, Math.max(1, Number.parseInt(limit) || 50))
     const offset = (pageNum - 1) * limitNum
 
-    sql += ` LIMIT ? OFFSET ?`
-    params.push(limitNum, offset)
+    sql += ` LIMIT ${limitNum} OFFSET ${offset}`
 
     const movements = await executeQuery(sql, params)
 
