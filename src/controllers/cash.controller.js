@@ -885,10 +885,10 @@ export const getCashHistory = async (req, res) => {
                cs.opening_date, cs.closing_date, cs.opened_by, cs.closed_by, cs.opening_notes, cs.closing_notes,
                cs.created_at, cs.updated_at, u_open.name, u_close.name
        ORDER BY cs.closing_date DESC
-  LIMIT ${limitNum} OFFSET ${offset}
+       LIMIT ${limitNum} OFFSET ${offset}
     `
 
-   const history = await executeQuery(historyQuery, params)
+    const history = await executeQuery(historyQuery, params)
 
     // Contar total para paginación
     const countQuery = `SELECT COUNT(*) as total FROM cash_sessions cs ${dateFilter}`

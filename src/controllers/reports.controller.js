@@ -122,7 +122,7 @@ export const getTopProducts = async (req, res) => {
       ${dateFilter}
       GROUP BY p.id, p.name, p.image, p.cost, p.price, p.unit_type
       ORDER BY quantity DESC
-      LIMIT ?
+        LIMIT ${limit}
     `,
       params,
     )
