@@ -179,7 +179,7 @@ export const getTopCustomers = async (req, res) => {
       ${dateFilter}
       GROUP BY c.id, c.name, c.email, c.phone
       ORDER BY amount DESC
-        LIMIT ${limitNum}
+        LIMIT ${limit}
     `,
       params,
     )
