@@ -11,6 +11,9 @@ export const getTopSellingProducts = async (req, res) => {
         p.name,
         p.description,
         p.price,
+        p.price_level_1,
+        p.price_level_2,
+        p.price_level_3,
         p.cost,
         p.stock,
         p.min_stock,
@@ -31,7 +34,7 @@ export const getTopSellingProducts = async (req, res) => {
       LEFT JOIN sale_items si ON p.id = si.product_id
       LEFT JOIN sales s ON si.sale_id = s.id AND s.status = 'completed'
       WHERE p.active = TRUE
-      GROUP BY p.id, p.name, p.description, p.price, p.cost, p.stock, 
+      GROUP BY p.id, p.name, p.description, p.price, p.price_level_1, p.price_level_2, p.price_level_3, p.cost, p.stock, 
                p.min_stock, p.unit_type, p.category_id, p.barcode, p.image, 
                p.active, p.created_at, p.updated_at, c.name, c.color, c.icon
       ORDER BY total_sold DESC, sales_count DESC, p.name ASC
@@ -77,6 +80,9 @@ export const getProducts = async (req, res) => {
         p.name,
         p.description,
         p.price,
+        p.price_level_1,
+        p.price_level_2,
+        p.price_level_3,
         p.cost,
         p.stock,
         p.min_stock,
@@ -143,13 +149,13 @@ export const getProducts = async (req, res) => {
       params.push(Number.parseFloat(maxStock))
     }
 
-    // Filtro por rango de precios
+    // Filtro por rango de precios (ahora usando price_level_1 como referencia)
     if (minPrice && !isNaN(Number.parseFloat(minPrice))) {
-      sql += ` AND p.price >= ?`
+      sql += ` AND p.price_level_1 >= ?`
       params.push(Number.parseFloat(minPrice))
     }
     if (maxPrice && !isNaN(Number.parseFloat(maxPrice))) {
-      sql += ` AND p.price <= ?`
+      sql += ` AND p.price_level_1 <= ?`
       params.push(Number.parseFloat(maxPrice))
     }
 
@@ -203,11 +209,11 @@ export const getProducts = async (req, res) => {
       countParams.push(Number.parseFloat(maxStock))
     }
     if (minPrice && !isNaN(Number.parseFloat(minPrice))) {
-      countSql += ` AND p.price >= ?`
+      countSql += ` AND p.price_level_1 >= ?`
       countParams.push(Number.parseFloat(minPrice))
     }
     if (maxPrice && !isNaN(Number.parseFloat(maxPrice))) {
-      countSql += ` AND p.price <= ?`
+      countSql += ` AND p.price_level_1 <= ?`
       countParams.push(Number.parseFloat(maxPrice))
     }
 
@@ -409,7 +415,21 @@ export const getProductById = async (req, res) => {
 
 export const createProduct = async (req, res) => {
   try {
-    const { name, description, price, cost, stock, min_stock, category_id, barcode, image, unit_type } = req.body
+    const {
+      name,
+      description,
+      price,
+      price_level_1,
+      price_level_2,
+      price_level_3,
+      cost,
+      stock,
+      min_stock,
+      category_id,
+      barcode,
+      image,
+      unit_type,
+    } = req.body
 
     // Validaciones básicas
     if (!name || name.trim().length === 0) {
@@ -420,18 +440,37 @@ export const createProduct = async (req, res) => {
       })
     }
 
-    if (!price || isNaN(Number.parseFloat(price)) || Number.parseFloat(price) <= 0) {
+    const priceLevel1 = Number.parseFloat(price_level_1 || price || 0)
+    const priceLevel2 = Number.parseFloat(price_level_2 || price_level_1 || price || 0)
+    const priceLevel3 = Number.parseFloat(price_level_3 || price_level_2 || price_level_1 || price || 0)
+
+    if (priceLevel1 <= 0) {
       return res.status(400).json({
         success: false,
-        message: "El precio debe ser un número válido mayor a 0",
-        code: "INVALID_PRICE",
+        message: "El precio de venta 1 debe ser un número válido mayor a 0",
+        code: "INVALID_PRICE_LEVEL_1",
+      })
+    }
+
+    if (priceLevel2 <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "El precio de venta 2 debe ser un número válido mayor a 0",
+        code: "INVALID_PRICE_LEVEL_2",
+      })
+    }
+
+    if (priceLevel3 <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "El precio de venta 3 debe ser un número válido mayor a 0",
+        code: "INVALID_PRICE_LEVEL_3",
       })
     }
 
     const validUnitTypes = ["unidades", "kg"]
     const productUnitType = unit_type && validUnitTypes.includes(unit_type) ? unit_type : "unidades"
 
-    const productPrice = Number.parseFloat(price)
     const productCost = Number.parseFloat(cost) || 0
 
     let productStock = 0
@@ -455,7 +494,7 @@ export const createProduct = async (req, res) => {
     }
 
     const minStock =
-      min_stock !== undefined && min_stock !== null && min_stock !== "" ? Number.parseFloat(min_stock) : 10 // Valor por defecto
+      min_stock !== undefined && min_stock !== null && min_stock !== "" ? Number.parseFloat(min_stock) : 10
 
     if (isNaN(minStock) || minStock < 0) {
       return res.status(400).json({
@@ -511,18 +550,22 @@ export const createProduct = async (req, res) => {
 
     const insertSql = `
       INSERT INTO products (
-        name, description, price, cost, stock, min_stock, category_id, 
+        name, description, price, price_level_1, price_level_2, price_level_3, 
+        cost, stock, min_stock, category_id, 
         barcode, image, unit_type, active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `
 
     const insertParams = [
       name.trim(),
       description?.trim() || null,
-      productPrice,
+      priceLevel1, // Keep price field for backward compatibility
+      priceLevel1,
+      priceLevel2,
+      priceLevel3,
       productCost,
       productStock,
-      minStock, // Usar la variable validada
+      minStock,
       productCategoryId,
       barcode?.trim() || null,
       image?.trim() || null,
@@ -572,7 +615,21 @@ export const createProduct = async (req, res) => {
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params
-    const { name, description, price, cost, min_stock, category_id, barcode, image, active, unit_type } = req.body
+    const {
+      name,
+      description,
+      price,
+      price_level_1,
+      price_level_2,
+      price_level_3,
+      cost,
+      min_stock,
+      category_id,
+      barcode,
+      image,
+      active,
+      unit_type,
+    } = req.body
 
     if (!id || isNaN(Number.parseInt(id))) {
       return res.status(400).json({
@@ -599,11 +656,37 @@ export const updateProduct = async (req, res) => {
       })
     }
 
-    if (!price || isNaN(Number.parseFloat(price)) || Number.parseFloat(price) <= 0) {
+    const currentProduct = existingProduct[0]
+    const priceLevel1 =
+      price_level_1 !== undefined
+        ? Number.parseFloat(price_level_1)
+        : price !== undefined
+          ? Number.parseFloat(price)
+          : currentProduct.price_level_1
+    const priceLevel2 = price_level_2 !== undefined ? Number.parseFloat(price_level_2) : currentProduct.price_level_2
+    const priceLevel3 = price_level_3 !== undefined ? Number.parseFloat(price_level_3) : currentProduct.price_level_3
+
+    if (isNaN(priceLevel1) || priceLevel1 <= 0) {
       return res.status(400).json({
         success: false,
-        message: "El precio debe ser un número válido mayor a 0",
-        code: "INVALID_PRICE",
+        message: "El precio de venta 1 debe ser un número válido mayor a 0",
+        code: "INVALID_PRICE_LEVEL_1",
+      })
+    }
+
+    if (isNaN(priceLevel2) || priceLevel2 <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "El precio de venta 2 debe ser un número válido mayor a 0",
+        code: "INVALID_PRICE_LEVEL_2",
+      })
+    }
+
+    if (isNaN(priceLevel3) || priceLevel3 <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "El precio de venta 3 debe ser un número válido mayor a 0",
+        code: "INVALID_PRICE_LEVEL_3",
       })
     }
 
@@ -611,14 +694,13 @@ export const updateProduct = async (req, res) => {
     const productUnitType =
       unit_type && validUnitTypes.includes(unit_type) ? unit_type : existingProduct[0].unit_type || "unidades"
 
-    const productPrice = Number.parseFloat(price)
     const productCost = Number.parseFloat(cost) || 0
 
-    let minStock = existingProduct[0].min_stock // Mantener el valor existente por defecto
+    let minStock = existingProduct[0].min_stock
 
     if (min_stock !== undefined) {
       if (min_stock === null || min_stock === "") {
-        minStock = 10 // Valor por defecto si se envía vacío
+        minStock = 10
       } else {
         minStock = Number.parseFloat(min_stock)
         if (isNaN(minStock) || minStock < 0) {
@@ -679,17 +761,20 @@ export const updateProduct = async (req, res) => {
 
     const updateSql = `
       UPDATE products 
-      SET name = ?, description = ?, price = ?, cost = ?, min_stock = ?, 
-          category_id = ?, barcode = ?, image = ?, unit_type = ?, active = ?, updated_at = NOW()
+      SET name = ?, description = ?, price = ?, price_level_1 = ?, price_level_2 = ?, price_level_3 = ?, 
+          cost = ?, min_stock = ?, category_id = ?, barcode = ?, image = ?, unit_type = ?, active = ?, updated_at = NOW()
       WHERE id = ?
     `
 
     const updateParams = [
       name.trim(),
       description?.trim() || null,
-      productPrice,
+      priceLevel1, // Keep price field for backward compatibility
+      priceLevel1,
+      priceLevel2,
+      priceLevel3,
       productCost,
-      minStock, // Usar la variable validada
+      minStock,
       productCategoryId,
       barcode?.trim() || null,
       image?.trim() || null,
@@ -1053,6 +1138,71 @@ export const getStockStats = async (req, res) => {
       success: false,
       message: "Error interno del servidor",
       code: "STATS_FETCH_ERROR",
+    })
+  }
+}
+
+export const getProductPriceByLevel = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { level = 1 } = req.query
+
+    if (!id || isNaN(Number.parseInt(id))) {
+      return res.status(400).json({
+        success: false,
+        message: "ID de producto inválido",
+        code: "INVALID_PRODUCT_ID",
+      })
+    }
+
+    const priceLevel = Number.parseInt(level)
+    if (![1, 2, 3].includes(priceLevel)) {
+      return res.status(400).json({
+        success: false,
+        message: "Nivel de precio inválido. Debe ser 1, 2 o 3",
+        code: "INVALID_PRICE_LEVEL",
+      })
+    }
+
+    const sql = `
+      SELECT 
+        id,
+        name,
+        price_level_1,
+        price_level_2,
+        price_level_3,
+        CASE 
+          WHEN ? = 1 THEN price_level_1
+          WHEN ? = 2 THEN price_level_2
+          WHEN ? = 3 THEN price_level_3
+          ELSE price_level_1
+        END as selected_price,
+        unit_type,
+        stock
+      FROM products 
+      WHERE id = ? AND active = TRUE
+    `
+
+    const products = await executeQuery(sql, [priceLevel, priceLevel, priceLevel, Number.parseInt(id)])
+
+    if (products.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Producto no encontrado o inactivo",
+        code: "PRODUCT_NOT_FOUND",
+      })
+    }
+
+    res.json({
+      success: true,
+      data: products[0],
+    })
+  } catch (error) {
+    console.error("Error al obtener precio por nivel:", error)
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      code: "PRICE_LEVEL_FETCH_ERROR",
     })
   }
 }

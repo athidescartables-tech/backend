@@ -116,16 +116,7 @@ const validateCashOpen = async () => {
 // ACTUALIZADO: Obtener todas las ventas con paginación optimizada
 export const getSales = async (req, res) => {
   try {
-    const {
-      start_date,
-      end_date,
-      payment_method,
-      status,
-      customer_id,
-      search,
-      page = 1,
-      limit = 25,
-    } = req.query
+    const { start_date, end_date, payment_method, status, customer_id, search, page = 1, limit = 25 } = req.query
 
     let sql = `
     SELECT 
@@ -226,7 +217,7 @@ export const getSales = async (req, res) => {
     // Ejecutar consultas en paralelo para mejor performance
     const [countResult, sales] = await Promise.all([
       executeQuery(countSql, countParams),
-      executeQuery(`${sql} LIMIT ${limitNum} OFFSET ${offset}`, params)
+      executeQuery(`${sql} LIMIT ${limitNum} OFFSET ${offset}`, params),
     ])
 
     // Formatear métodos de pago para cada venta
@@ -299,7 +290,6 @@ export const getSaleById = async (req, res) => {
 
     const sale = formatPaymentMethods(sales[0])
 
-    // Obtener items de la venta
     const itemsQuery = `
     SELECT 
       si.*,
@@ -307,6 +297,9 @@ export const getSaleById = async (req, res) => {
       p.image as product_image,
       p.barcode as product_barcode,
       p.unit_type as product_unit_type,
+      p.price_level_1,
+      p.price_level_2,
+      p.price_level_3,
       c.name as category_name
     FROM sale_items si
     LEFT JOIN products p ON si.product_id = p.id
@@ -517,7 +510,6 @@ export const createSale = async (req, res) => {
       })
     }
 
-    // CORREGIDO: Validar items con soporte para decimales
     for (const item of items) {
       if (!item.product_id || isNaN(Number.parseInt(item.product_id))) {
         console.log("❌ Error: ID de producto inválido")
@@ -545,6 +537,18 @@ export const createSale = async (req, res) => {
           message: "Precio unitario inválido",
           code: "INVALID_UNIT_PRICE",
         })
+      }
+
+      if (item.price_level !== undefined) {
+        const priceLevel = Number.parseInt(item.price_level)
+        if (![1, 2, 3].includes(priceLevel)) {
+          console.log("❌ Error: Nivel de precio inválido", item.price_level)
+          return res.status(400).json({
+            success: false,
+            message: "El nivel de precio debe ser 1, 2 o 3",
+            code: "INVALID_PRICE_LEVEL",
+          })
+        }
       }
     }
 
@@ -733,13 +737,13 @@ export const createSale = async (req, res) => {
 
     console.log("✅ Customer final verificado:", finalCustomerCheck[0])
 
-    // CORREGIDO: Verificar stock de productos con soporte para decimales
-    console.log("📦 Verificando stock de productos...")
+    console.log("📦 Verificando stock de productos y precios...")
     const productStockInfo = []
     for (const item of items) {
-      const productQuery = await executeQuery("SELECT id, name, stock, active, unit_type FROM products WHERE id = ?", [
-        Number.parseInt(item.product_id),
-      ])
+      const productQuery = await executeQuery(
+        "SELECT id, name, stock, active, unit_type, price_level_1, price_level_2, price_level_3 FROM products WHERE id = ?",
+        [Number.parseInt(item.product_id)],
+      )
 
       if (productQuery.length === 0) {
         console.log("❌ Error: Producto no encontrado:", item.product_id)
@@ -761,6 +765,24 @@ export const createSale = async (req, res) => {
         })
       }
 
+      const priceLevel = item.price_level || 1
+      const expectedPrice = product[`price_level_${priceLevel}`]
+      const itemPrice = Number.parseFloat(item.unit_price)
+
+      if (Math.abs(itemPrice - expectedPrice) > 0.01) {
+        console.log("❌ Error: Precio no coincide con nivel:", {
+          product: product.name,
+          level: priceLevel,
+          expected: expectedPrice,
+          received: itemPrice,
+        })
+        return res.status(400).json({
+          success: false,
+          message: `El precio del producto "${product.name}" no coincide con el nivel de precio seleccionado`,
+          code: "PRICE_LEVEL_MISMATCH",
+        })
+      }
+
       // CORREGIDO: Usar parseFloat para cantidad
       const requestedQuantity = Number.parseFloat(item.quantity)
       if (product.stock < requestedQuantity) {
@@ -779,10 +801,11 @@ export const createSale = async (req, res) => {
         current_stock: product.stock,
         quantity_sold: requestedQuantity,
         new_stock: product.stock - requestedQuantity,
+        price_level: priceLevel,
       })
     }
 
-    console.log("✅ Stock verificado para", productStockInfo.length, "productos")
+    console.log("✅ Stock y precios verificados para", productStockInfo.length, "productos")
 
     // Crear la venta - SIN descuento
     console.log("💾 Creando venta en base de datos...")
@@ -811,20 +834,21 @@ export const createSale = async (req, res) => {
     // Crear las queries para items y stock
     const queries = []
 
-    // CORREGIDO: Insertar items de venta con parseFloat
     for (const item of items) {
+      const priceLevel = item.price_level || 1
       const itemQuery = {
         query: `
         INSERT INTO sale_items (
-          sale_id, product_id, quantity, unit_price, subtotal, created_at
-        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          sale_id, product_id, quantity, unit_price, subtotal, price_level, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `,
         params: [
           saleId,
           Number.parseInt(item.product_id),
-          Number.parseFloat(item.quantity), // CORREGIDO: parseFloat
+          Number.parseFloat(item.quantity),
           Number.parseFloat(item.unit_price),
           Number.parseFloat(item.quantity) * Number.parseFloat(item.unit_price),
+          priceLevel,
         ],
       }
       queries.push(itemQuery)
@@ -937,7 +961,6 @@ export const createSale = async (req, res) => {
       [saleId],
     )
 
-    // Obtener los items de la venta
     const saleItems = await executeQuery(
       `
     SELECT 
@@ -945,7 +968,10 @@ export const createSale = async (req, res) => {
       p.name as product_name,
       p.image as product_image,
       p.barcode as product_barcode,
-      p.unit_type as product_unit_type
+      p.unit_type as product_unit_type,
+      p.price_level_1,
+      p.price_level_2,
+      p.price_level_3
     FROM sale_items si
     LEFT JOIN products p ON si.product_id = p.id
     WHERE si.sale_id = ?
