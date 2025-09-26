@@ -401,3 +401,51 @@ export const updateUser = async (req, res) => {
     })
   }
 }
+
+// Eliminar usuario (solo admin)
+export const deleteUser = async (req, res) => {
+  const { id } = req.params
+
+  try {
+    // Verificar si el usuario existe
+    const users = await executeQuery("SELECT id, email FROM users WHERE id = ?", [id])
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Usuario no encontrado",
+        code: "USER_NOT_FOUND",
+      })
+    }
+
+    const user = users[0]
+
+    // Prevenir que el admin se elimine a sí mismo
+    if (Number.parseInt(id) === req.user.id) {
+      return res.status(400).json({
+        success: false,
+        message: "No puedes eliminar tu propia cuenta",
+        code: "CANNOT_DELETE_SELF",
+      })
+    }
+
+    // Eliminar usuario
+    await executeQuery("DELETE FROM users WHERE id = ?", [id])
+
+    logAuthEvent("delete_user", user.email, true, `Eliminado por ${req.user.email}`)
+
+    res.json({
+      success: true,
+      message: "Usuario eliminado correctamente",
+    })
+  } catch (error) {
+    console.error("Error eliminando usuario:", error)
+    logAuthEvent("delete_user", req.params.id, false, error.message)
+
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      code: "INTERNAL_ERROR",
+    })
+  }
+}

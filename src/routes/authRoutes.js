@@ -7,6 +7,7 @@ import {
   createUser,
   getUsers,
   updateUser,
+  deleteUser,
 } from "../controllers/auth.controller.js"
 import { authenticateToken, requireAdmin } from "../middleware/auth.js"
 import {
@@ -30,5 +31,6 @@ router.post("/change-password", authenticateToken, validatePasswordChange, chang
 router.post("/users", authenticateToken, requireAdmin, validateCreateUser, createUser)
 router.get("/users", authenticateToken, requireAdmin, getUsers)
 router.put("/users/:id", authenticateToken, requireAdmin, updateUser)
+router.delete("/users/:id", authenticateToken, requireAdmin, deleteUser)
 
 export default router
