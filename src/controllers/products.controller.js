@@ -1,4 +1,5 @@
 import { executeQuery, executeTransaction } from "../config/database.js"
+import xlsx from "xlsx"
 
 // NUEVO: Obtener los 10 productos más vendidos para la interfaz de ventas
 export const getTopSellingProducts = async (req, res) => {
@@ -1203,6 +1204,368 @@ export const getProductPriceByLevel = async (req, res) => {
       success: false,
       message: "Error interno del servidor",
       code: "PRICE_LEVEL_FETCH_ERROR",
+    })
+  }
+}
+
+// NUEVO: Descargar plantilla Excel para importar productos
+export const downloadExcelTemplate = async (req, res) => {
+  try {
+    // Create workbook
+    const wb = xlsx.utils.book_new()
+
+    // Define template headers
+    const headers = [
+      "nombre",
+      "descripcion",
+      "precio_nivel_1",
+      "precio_nivel_2",
+      "precio_nivel_3",
+      "costo",
+      "stock",
+      "stock_minimo",
+      "tipo_unidad",
+      "categoria",
+      "codigo_barras",
+      "imagen_url",
+    ]
+
+    // Create example data
+    const exampleData = [
+      [
+        "Coca Cola 500ml",
+        "Gaseosa Coca Cola 500ml",
+        350.0,
+        320.0,
+        300.0,
+        200.0,
+        50,
+        10,
+        "unidades",
+        "Bebidas",
+        "7790001234567",
+        "https://ejemplo.com/imagen.jpg",
+      ],
+      [
+        "Carne Molida",
+        "Carne molida especial",
+        2800.0,
+        2700.0,
+        2600.0,
+        2200.0,
+        15.5,
+        2.0,
+        "kg",
+        "Carnes",
+        "7790009876543",
+        "",
+      ],
+    ]
+
+    // Create worksheet data
+    const wsData = [headers, ...exampleData]
+
+    // Create worksheet
+    const ws = xlsx.utils.aoa_to_sheet(wsData)
+
+    // Set column widths
+    ws["!cols"] = [
+      { wch: 25 }, // nombre
+      { wch: 40 }, // descripcion
+      { wch: 15 }, // precio_nivel_1
+      { wch: 15 }, // precio_nivel_2
+      { wch: 15 }, // precio_nivel_3
+      { wch: 12 }, // costo
+      { wch: 10 }, // stock
+      { wch: 15 }, // stock_minimo
+      { wch: 15 }, // tipo_unidad
+      { wch: 20 }, // categoria
+      { wch: 20 }, // codigo_barras
+      { wch: 40 }, // imagen_url
+    ]
+
+    // Add instructions sheet
+    const instructionsData = [
+      ["INSTRUCCIONES PARA IMPORTAR PRODUCTOS"],
+      [""],
+      ["Campos requeridos:"],
+      ["- nombre: Nombre del producto (obligatorio)"],
+      ["- precio_nivel_1: Precio de venta nivel 1 (obligatorio, debe ser mayor a 0)"],
+      [""],
+      ["Campos opcionales:"],
+      ["- descripcion: Descripción del producto"],
+      ["- precio_nivel_2: Precio de venta nivel 2 (si no se especifica, se usa precio_nivel_1)"],
+      ["- precio_nivel_3: Precio de venta nivel 3 (si no se especifica, se usa precio_nivel_2)"],
+      ["- costo: Costo del producto (por defecto 0)"],
+      ["- stock: Stock inicial (por defecto 0)"],
+      ["- stock_minimo: Stock mínimo para alertas (por defecto 10)"],
+      ["- tipo_unidad: 'unidades' o 'kg' (por defecto 'unidades')"],
+      ["- categoria: Nombre de la categoría (se creará si no existe)"],
+      ["- codigo_barras: Código de barras único"],
+      ["- imagen_url: URL de la imagen del producto"],
+      [""],
+      ["Notas importantes:"],
+      ["- Para productos por 'kg', el stock puede tener decimales (ej: 15.5)"],
+      ["- Para productos por 'unidades', el stock debe ser un número entero"],
+      ["- Los códigos de barras duplicados serán omitidos"],
+      ["- Las categorías se crearán automáticamente si no existen"],
+      ["- El stock inicial creará un movimiento de entrada automático"],
+    ]
+
+    const wsInstructions = xlsx.utils.aoa_to_sheet(instructionsData)
+    wsInstructions["!cols"] = [{ wch: 80 }]
+
+    // Add sheets to workbook
+    xlsx.utils.book_append_sheet(wb, ws, "Productos")
+    xlsx.utils.book_append_sheet(wb, wsInstructions, "Instrucciones")
+
+    // Generate buffer
+    const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" })
+
+    // Set headers
+    res.setHeader("Content-Disposition", "attachment; filename=plantilla_productos.xlsx")
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    // Send file
+    res.send(buffer)
+  } catch (error) {
+    console.error("Error generating template:", error)
+    res.status(500).json({
+      success: false,
+      message: "Error al generar la plantilla",
+      code: "TEMPLATE_GENERATION_ERROR",
+    })
+  }
+}
+
+// NUEVO: Importar productos desde archivo Excel
+export const importProductsFromExcel = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No se ha enviado ningún archivo",
+        code: "NO_FILE",
+      })
+    }
+
+    // Read Excel file
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" })
+    const sheetName = workbook.SheetNames[0]
+    const worksheet = workbook.Sheets[sheetName]
+
+    // Convert to JSON
+    const data = xlsx.utils.sheet_to_json(worksheet)
+
+    if (data.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "El archivo Excel está vacío",
+        code: "EMPTY_FILE",
+      })
+    }
+
+    const results = {
+      total: data.length,
+      success: 0,
+      errors: 0,
+      skipped: 0,
+      details: [],
+    }
+
+    // Get all categories for mapping
+    const existingCategories = await executeQuery("SELECT id, name FROM categories WHERE active = TRUE")
+    const categoryMap = new Map(existingCategories.map((c) => [c.name.toLowerCase(), c.id]))
+
+    // Get all existing barcodes
+    const existingBarcodes = await executeQuery("SELECT barcode FROM products WHERE barcode IS NOT NULL")
+    const barcodeSet = new Set(existingBarcodes.map((p) => p.barcode))
+
+    // Process each row
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i]
+      const rowNumber = i + 2 // +2 because Excel rows start at 1 and we have a header
+
+      try {
+        // Validate required fields
+        if (!row.nombre || !row.nombre.trim()) {
+          results.errors++
+          results.details.push({
+            row: rowNumber,
+            status: "error",
+            message: "El nombre del producto es requerido",
+            data: row,
+          })
+          continue
+        }
+
+        const priceLevel1 = Number.parseFloat(row.precio_nivel_1)
+        if (isNaN(priceLevel1) || priceLevel1 <= 0) {
+          results.errors++
+          results.details.push({
+            row: rowNumber,
+            status: "error",
+            message: "El precio_nivel_1 debe ser un número mayor a 0",
+            data: row,
+          })
+          continue
+        }
+
+        // Check for duplicate barcode
+        if (row.codigo_barras && row.codigo_barras.trim()) {
+          const barcode = row.codigo_barras.trim()
+          if (barcodeSet.has(barcode)) {
+            results.skipped++
+            results.details.push({
+              row: rowNumber,
+              status: "skipped",
+              message: `Código de barras duplicado: ${barcode}`,
+              data: row,
+            })
+            continue
+          }
+          barcodeSet.add(barcode)
+        }
+
+        // Process category
+        let categoryId = null
+        if (row.categoria && row.categoria.trim()) {
+          const categoryName = row.categoria.trim()
+          const categoryKey = categoryName.toLowerCase()
+
+          if (categoryMap.has(categoryKey)) {
+            categoryId = categoryMap.get(categoryKey)
+          } else {
+            // Create new category
+            const newCategory = await executeQuery(
+              "INSERT INTO categories (name, active, created_at, updated_at) VALUES (?, TRUE, NOW(), NOW())",
+              [categoryName],
+            )
+            categoryId = newCategory.insertId
+            categoryMap.set(categoryKey, categoryId)
+          }
+        }
+
+        // Process prices
+        const priceLevel2 = row.precio_nivel_2 ? Number.parseFloat(row.precio_nivel_2) : priceLevel1
+        const priceLevel3 = row.precio_nivel_3 ? Number.parseFloat(row.precio_nivel_3) : priceLevel2
+
+        // Process unit type
+        const validUnitTypes = ["unidades", "kg"]
+        const unitType =
+          row.tipo_unidad && validUnitTypes.includes(row.tipo_unidad.toLowerCase())
+            ? row.tipo_unidad.toLowerCase()
+            : "unidades"
+
+        // Process stock
+        let stock = 0
+        if (row.stock !== undefined && row.stock !== null && row.stock !== "") {
+          stock = Number.parseFloat(row.stock)
+          if (isNaN(stock) || stock < 0) {
+            results.errors++
+            results.details.push({
+              row: rowNumber,
+              status: "error",
+              message: "El stock debe ser un número válido mayor o igual a 0",
+              data: row,
+            })
+            continue
+          }
+
+          // Validate integer for units
+          if (unitType === "unidades" && !Number.isInteger(stock)) {
+            results.errors++
+            results.details.push({
+              row: rowNumber,
+              status: "error",
+              message: "Para productos por unidades, el stock debe ser un número entero",
+              data: row,
+            })
+            continue
+          }
+        }
+
+        // Process min stock
+        let minStock = 10
+        if (row.stock_minimo !== undefined && row.stock_minimo !== null && row.stock_minimo !== "") {
+          minStock = Number.parseFloat(row.stock_minimo)
+          if (isNaN(minStock) || minStock < 0) {
+            minStock = 10
+          }
+          if (unitType === "unidades" && !Number.isInteger(minStock)) {
+            minStock = Math.floor(minStock)
+          }
+        }
+
+        // Process cost
+        const cost = row.costo ? Number.parseFloat(row.costo) : 0
+
+        // Insert product
+        const insertSql = `
+          INSERT INTO products (
+            name, description, price, price_level_1, price_level_2, price_level_3,
+            cost, stock, min_stock, category_id, barcode, image, unit_type, active, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, NOW(), NOW())
+        `
+
+        const insertParams = [
+          row.nombre.trim(),
+          row.descripcion?.trim() || null,
+          priceLevel1,
+          priceLevel1,
+          priceLevel2,
+          priceLevel3,
+          cost,
+          stock,
+          minStock,
+          categoryId,
+          row.codigo_barras?.trim() || null,
+          row.imagen_url?.trim() || null,
+          unitType,
+        ]
+
+        const result = await executeQuery(insertSql, insertParams)
+
+        // Create stock movement if initial stock > 0
+        if (stock > 0) {
+          await executeQuery(
+            `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, reason, user_id)
+             VALUES (?, 'entrada', ?, 0, ?, 'Importación desde Excel', ?)`,
+            [result.insertId, stock, stock, req.user?.id || null],
+          )
+        }
+
+        results.success++
+        results.details.push({
+          row: rowNumber,
+          status: "success",
+          message: `Producto "${row.nombre}" importado correctamente`,
+          data: row,
+        })
+      } catch (error) {
+        console.error(`Error processing row ${rowNumber}:`, error)
+        results.errors++
+        results.details.push({
+          row: rowNumber,
+          status: "error",
+          message: error.message || "Error al procesar el producto",
+          data: row,
+        })
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Importación completada: ${results.success} exitosos, ${results.errors} errores, ${results.skipped} omitidos`,
+      data: results,
+    })
+  } catch (error) {
+    console.error("Error importing products:", error)
+    res.status(500).json({
+      success: false,
+      message: "Error al importar productos",
+      code: "IMPORT_ERROR",
+      error: error.message,
     })
   }
 }
