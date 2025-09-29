@@ -523,7 +523,6 @@ export const createProduct = async (req, res) => {
       })
     }
 
-    // Verificar código de barras único
     if (barcode && barcode.trim()) {
       const existingProduct = await executeQuery("SELECT id FROM products WHERE barcode = ?", [barcode.trim()])
       if (existingProduct.length > 0) {
