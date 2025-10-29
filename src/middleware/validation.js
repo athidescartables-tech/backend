@@ -111,17 +111,16 @@ export const validateCreateProduct = [
   body("min_stock").optional().isFloat({ min: 0 }).withMessage("El stock mínimo no puede ser negativo"),
   body("category_id").optional().isInt({ min: 1 }).withMessage("La categoría debe ser válida"),
   body("barcode")
-    .optional()
+    .optional({ checkFalsy: true })
     .trim()
-    .isLength({ min: 1, max: 50 })
-    .withMessage("El código de barras debe tener entre 1 y 50 caracteres"),
+    .isLength({ max: 50 })
+    .withMessage("El código de barras no puede exceder 50 caracteres"),
   body("image")
     .optional({ checkFalsy: true })
     .custom((value) => {
       if (!value || value.trim() === "") {
-        return true // Permitir cadenas vacías
+        return true
       }
-      // Solo validar URL si hay un valor
       const urlRegex = /^https?:\/\/.+/
       if (!urlRegex.test(value)) {
         throw new Error("La imagen debe ser una URL válida")
@@ -143,17 +142,16 @@ export const validateUpdateProduct = [
   body("min_stock").optional().isFloat({ min: 0 }).withMessage("El stock mínimo no puede ser negativo"),
   body("category_id").optional().isInt({ min: 1 }).withMessage("La categoría debe ser válida"),
   body("barcode")
-    .optional()
+    .optional({ checkFalsy: true })
     .trim()
-    .isLength({ min: 1, max: 50 })
-    .withMessage("El código de barras debe tener entre 1 y 50 caracteres"),
+    .isLength({ max: 50 })
+    .withMessage("El código de barras no puede exceder 50 caracteres"),
   body("image")
     .optional({ checkFalsy: true })
     .custom((value) => {
       if (!value || value.trim() === "") {
-        return true // Permitir cadenas vacías
+        return true
       }
-      // Solo validar URL si hay un valor
       const urlRegex = /^https?:\/\/.+/
       if (!urlRegex.test(value)) {
         throw new Error("La imagen debe ser una URL válida")
