@@ -159,7 +159,7 @@ export const updateCategory = async (req, res) => {
   }
 }
 
-// Eliminar categoría (soft delete)
+// Eliminar categoría (soft delete si tiene productos, hard delete si no)
 export const deleteCategory = async (req, res) => {
   try {
     const { id } = req.params
@@ -173,25 +173,27 @@ export const deleteCategory = async (req, res) => {
       })
     }
 
-    // Verificar si hay productos asociados
-    const productsCount = await executeQuery(
-      "SELECT COUNT(*) as count FROM products WHERE category_id = ? AND active = TRUE",
-      [id],
-    )
-    if (productsCount[0].count > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `No se puede eliminar la categoría porque tiene ${productsCount[0].count} productos asociados`,
+    const productsCount = await executeQuery("SELECT COUNT(*) as count FROM products WHERE category_id = ?", [id])
+
+    const hasProducts = productsCount[0].count > 0
+
+    if (hasProducts) {
+      await executeQuery("UPDATE categories SET active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [id])
+
+      return res.json({
+        success: true,
+        message: `Categoría marcada como inactiva porque tiene ${productsCount[0].count} productos asociados`,
+        deleted: false, // Indica que fue soft delete
+      })
+    } else {
+      await executeQuery("DELETE FROM categories WHERE id = ?", [id])
+
+      return res.json({
+        success: true,
+        message: "Categoría eliminada permanentemente de la base de datos",
+        deleted: true, // Indica que fue hard delete
       })
     }
-
-    // Soft delete
-    await executeQuery("UPDATE categories SET active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [id])
-
-    res.json({
-      success: true,
-      message: "Categoría eliminada correctamente",
-    })
   } catch (error) {
     console.error("Error al eliminar categoría:", error)
     res.status(500).json({
@@ -238,29 +240,14 @@ export const restoreCategory = async (req, res) => {
 // Obtener estadísticas de categorías
 export const getCategoryStats = async (req, res) => {
   try {
-    const stats = await executeQuery(`
-      SELECT 
-        COUNT(*) as total_categories,
-        SUM(CASE WHEN active = TRUE THEN 1 ELSE 0 END) as active_categories,
-        SUM(CASE WHEN active = FALSE THEN 1 ELSE 0 END) as inactive_categories
-      FROM categories
-    `)
+    const stats = await executeQuery(
+      `SELECT COUNT(*) as total_categories, SUM(CASE WHEN active = TRUE THEN 1 ELSE 0 END) as active_categories, SUM(CASE WHEN active = FALSE THEN 1 ELSE 0 END) as inactive_categories FROM categories`,
+    )
 
     // Categorías con más productos
-    const topCategories = await executeQuery(`
-      SELECT 
-        c.id,
-        c.name,
-        c.color,
-        c.icon,
-        COUNT(p.id) as product_count
-      FROM categories c
-      LEFT JOIN products p ON c.id = p.category_id AND p.active = TRUE
-      WHERE c.active = TRUE
-      GROUP BY c.id, c.name, c.color, c.icon
-      ORDER BY product_count DESC
-      LIMIT 5
-    `)
+    const topCategories = await executeQuery(
+      `SELECT c.id, c.name, c.color, c.icon, COUNT(p.id) as product_count FROM categories c LEFT JOIN products p ON c.id = p.category_id AND p.active = TRUE WHERE c.active = TRUE GROUP BY c.id, c.name, c.color, c.icon ORDER BY product_count DESC LIMIT 5`,
+    )
 
     res.json({
       success: true,
