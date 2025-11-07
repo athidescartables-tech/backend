@@ -11,6 +11,7 @@ import salesRoutes from "./src/routes/salesRoutes.js"
 import customersRoutes from "./src/routes/customersRoutes.js"
 import reportsRoutes from "./src/routes/reportsRoutes.js"
 import cashRoutes from "./src/routes/cashRoutes.js"
+import deliveriesRoutes from "./src/routes/deliveriesRoutes.js"
 
 // Configuración
 dotenv.config()
@@ -96,6 +97,7 @@ app.use("/api/auth", authRoutes)
 app.use("/api/categories", categoriesRoutes)
 app.use("/api/customers", customersRoutes)
 app.use("/api/sales", salesRoutes)
+app.use("/api/deliveries", deliveriesRoutes)
 app.use("/api/products", productsRoutes)
 app.use("/api/reports", reportsRoutes) // CORREGIDO: Montar en /api/reports
 app.use("/api/cash", cashRoutes) // AGREGADO: Ruta de cash
